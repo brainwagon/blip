@@ -4,10 +4,16 @@
 Analyzes and optimizes the placement of three symmetric support points
 for a Newtonian telescope primary mirror using finite element analysis.
 
+Supports two modes:
+  Standard Mode — minimizes surface deformation (RMS or PV in nm).
+  PLOP Mode — minimizes wavefront error at focus after refocusing,
+               expressed in waves (lambda = 550nm).
+
 Usage:
-    python mirror_cell.py --diameter 150 --thickness 25 --optimize
+    python mirror_cell.py --diameter 150 --thickness 25
     python mirror_cell.py --diameter 150 --thickness 25 --support-radius 0.68
-    python mirror_cell.py --diameter 150 --thickness 25 --optimize --metric pv
+    python mirror_cell.py --diameter 150 --thickness 25 --metric pv
+    python mirror_cell.py --diameter 150 --thickness 25 --mode plop --focal-length 750
 """
 
 import argparse
@@ -25,9 +31,10 @@ def parse_args(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             'Examples:\n'
-            '  python mirror_cell.py --diameter 150 --thickness 25 --optimize\n'
-            '  python mirror_cell.py --diameter 150 --thickness 25 --optimize --metric pv\n'
+            '  python mirror_cell.py --diameter 150 --thickness 25\n'
+            '  python mirror_cell.py --diameter 150 --thickness 25 --metric pv\n'
             '  python mirror_cell.py --diameter 200 --thickness 30 --support-radius 0.68\n'
+            '  python mirror_cell.py --diameter 150 --thickness 25 --mode plop --focal-length 750\n'
         ),
     )
     parser.add_argument('--diameter', type=float, required=True,
@@ -44,6 +51,11 @@ def parse_args(argv=None):
                         help='Sweep support radius to find optimum (default if no --support-radius)')
     parser.add_argument('--metric', choices=['rms', 'pv'], default='rms',
                         help='Optimization metric: rms (default) or pv (peak-to-valley)')
+    parser.add_argument('--mode', choices=['standard', 'plop'], default='standard',
+                        help='Analysis mode: standard (surface deformation in nm) or '
+                             'plop (wavefront error in waves at 550nm after refocusing)')
+    parser.add_argument('--focal-length', type=float, default=None,
+                        help='Mirror focal length in mm (used for PLOP mode f-ratio display)')
     parser.add_argument('--no-plot', action='store_true', default=False,
                         help='Suppress plot display')
     parser.add_argument('--n-points', type=int, default=50,
@@ -74,6 +86,10 @@ def validate_args(args):
         if not (0.0 < args.support_radius < 1.0):
             print("Error: support-radius must be between 0 and 1 (exclusive)", file=sys.stderr)
             sys.exit(1)
+    if args.mode == 'plop' and args.focal_length is not None:
+        if args.focal_length <= 0:
+            print("Error: focal-length must be positive", file=sys.stderr)
+            sys.exit(1)
 
 
 def main(argv=None):
@@ -89,12 +105,20 @@ def main(argv=None):
     do_optimize = args.optimize or args.support_radius is None
 
     metric_name = 'RMS' if args.metric == 'rms' else 'Peak-to-Valley'
+    is_plop = args.mode == 'plop'
 
     print(f"Mirror Cell Support Optimizer")
     print(f"{'='*45}")
+    if is_plop:
+        print(f"Mode:             PLOP (wavefront error)")
+    else:
+        print(f"Mode:             Standard (surface deformation)")
     print(f"Mirror diameter:  {args.diameter:.1f} mm")
     print(f"Mirror radius:    {args.diameter/2:.1f} mm")
     print(f"Mirror thickness: {args.thickness:.1f} mm")
+    if args.focal_length:
+        f_ratio = args.focal_length / args.diameter
+        print(f"Focal length:     {args.focal_length:.1f} mm (f/{f_ratio:.1f})")
     if args.secondary:
         print(f"Secondary diam:   {args.secondary:.1f} mm (central obstruction)")
         print(f"  Obstruction:    {args.secondary/args.diameter*100:.1f}% by diameter")
@@ -102,6 +126,9 @@ def main(argv=None):
     print(f"  E  = 63 GPa")
     print(f"  nu = 0.20")
     print(f"  rho = 2230 kg/m^3")
+    if is_plop:
+        print(f"Wavelength:       550 nm (reference)")
+        print(f"Refocusing:       enabled (defocus term removed)")
     if do_optimize:
         print(f"Optimizing:       {metric_name}")
     print()
@@ -113,6 +140,7 @@ def main(argv=None):
         results = optimize_support_radius(
             radius_m, thickness_m, nrefs=args.nrefs, n_points=args.n_points,
             obstruction_radius=obstruction_m, metric=args.metric,
+            mode=args.mode,
         )
 
         radii_frac = results['radii_frac']
@@ -122,19 +150,44 @@ def main(argv=None):
         min_rms = results['min_rms']
         min_pv = results['min_pv']
 
-        # Print results table with both metrics
+        # Print results table
+        if is_plop:
+            unit = 'waves'
+            rms_hdr = 'RMS (waves)'
+            pv_hdr = 'PV (waves)'
+            fmt = '10.4f'
+        else:
+            unit = 'nm'
+            rms_hdr = 'RMS (nm)'
+            pv_hdr = 'PV (nm)'
+            fmt = '10.2f'
+
         print()
-        print(f"{'r/R':>8s}  {'RMS (nm)':>10s}  {'PV (nm)':>10s}")
-        print(f"{'-'*8}  {'-'*10}  {'-'*10}")
+        print(f"{'r/R':>8s}  {rms_hdr:>12s}  {pv_hdr:>12s}")
+        print(f"{'-'*8}  {'-'*12}  {'-'*12}")
         for r, rms, pv in zip(radii_frac, rms_values, pv_values):
             marker = ' <-- optimum' if abs(r - optimal_frac) < 1e-10 else ''
-            print(f"{r:8.4f}  {rms:10.2f}  {pv:10.2f}{marker}")
+            print(f"{r:8.4f}  {rms:{fmt}}  {pv:{fmt}}{marker}")
 
         print()
         print(f"Optimized metric: {metric_name}")
         print(f"Optimal support radius: {optimal_frac:.4f}R = {optimal_frac * args.diameter/2:.2f} mm")
-        print(f"  RMS at optimum: {min_rms:.2f} nm")
-        print(f"  PV  at optimum: {min_pv:.2f} nm")
+        if is_plop:
+            print(f"  RMS wavefront error at optimum: {min_rms:.4f} waves ({min_rms/4:.4f} Rayleigh)")
+            print(f"  P-V wavefront error at optimum: {min_pv:.4f} waves")
+            # Optical quality assessment
+            if min_rms <= 1/14:
+                quality = "Diffraction-limited (Marechal criterion: RMS <= lambda/14)"
+            elif min_rms <= 1/10:
+                quality = "Good (RMS <= lambda/10)"
+            elif min_rms <= 1/4:
+                quality = "Acceptable (RMS <= lambda/4)"
+            else:
+                quality = "Poor (RMS > lambda/4)"
+            print(f"  Optical quality: {quality}")
+        else:
+            print(f"  RMS at optimum: {min_rms:.2f} nm")
+            print(f"  PV  at optimum: {min_pv:.2f} nm")
 
         # Compare with classical reference
         classical_pv = 0.6789
@@ -149,7 +202,7 @@ def main(argv=None):
             # Also evaluate at optimum for deformation plot
             result = evaluate_single(
                 radius_m, thickness_m, optimal_frac, nrefs=args.nrefs,
-                obstruction_radius=obstruction_m,
+                obstruction_radius=obstruction_m, mode=args.mode,
             )
             w_nodal = result['w'][result['basis'].nodal_dofs[0]]
 
@@ -169,12 +222,18 @@ def main(argv=None):
 
         result = evaluate_single(
             radius_m, thickness_m, support_frac, nrefs=args.nrefs,
-            obstruction_radius=obstruction_m,
+            obstruction_radius=obstruction_m, mode=args.mode,
         )
 
         w_nodal = result['w'][result['basis'].nodal_dofs[0]]
-        print(f"RMS surface deformation:          {result['rms_nm']:.2f} nm")
+        print(f"RMS surface deformation:            {result['rms_nm']:.2f} nm")
         print(f"Peak-to-valley surface deformation: {result['pv_nm']:.2f} nm")
+
+        if is_plop:
+            print()
+            print(f"Wavefront error (after refocusing at 550nm):")
+            print(f"  RMS wavefront error: {result['wf_rms_waves']:.4f} waves")
+            print(f"  P-V wavefront error: {result['wf_pv_waves']:.4f} waves")
 
         if not args.no_plot:
             import matplotlib.pyplot as plt

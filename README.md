@@ -1,3 +1,37 @@
+# What's "blip" all about...
+
+I was working on creating a new mirror cell model that could be 3-D printed for the rebuild of my very first telescope,
+a 6" Newtonian that I built with my dad back in the 1970s.  The old mirror cell was an cast aluminum, commercially
+produced cell, but frankly I found many design elements to be of questionable design: it supported the mirror at three 
+positions spaced 120 degrees apart on the circumference.  Traditional wisdom from sites like Stellafane suggested
+that 3 point cells would be better supported a sqrt(2)/2 times the mirror radius, to balance the weight on the inside
+and outside of the zones.  But I recalled that some other possibilities had been suggested.  Texereau's _How to Make 
+A Telescope_, widely considered practically a Bible in the field of amateur telescope making, suggests in section II-3
+that small mirrors are "best" supported by three marginal points, advice which probably is sound for the classic
+thick blanks that are commonly used.  With the advent of many large and thin mirrors, design of more complex
+mirror cells to provide more even support seems reasonable.
+
+An excellent resource is [PLOP](https://github.com/davidlewistoronto/plop), an open source program that can design 
+very complex and sophisticated cells, and I would highly recommend it for that purpose.  In theory, it can develop
+proper placement for 3 point cells, but I found that while it would generate a design for a 3 point cell, it 
+didn't seem to provide the actual radius that I wanted (although graphically it looked much closer, less than half
+the radius of the mirror).  I thought the difference was large enough that wanted to find an alternate resource
+to verify the result.
+
+I couldn't find one.  So I wrote one. 
+
+Or rather, Claude Code wrote one for me.  Hence, blip was born.  
+
+It is far less versatile than PLOP, and to be fair, doesn't run particularly fast either, but it seems to 
+produce results which are close to classic results (the Grubb optimal support radius).  The suggested radius
+multiplier is somewhat smaller (0.636 instead of 0.707) but is still nowhere near as low as what appears 
+to be suggested by PLOP.   So what gives?  Is PLOP way off?  Or is the classic model not proper?
+
+It appears to be the latter, I found this discussion to be somewhat helpful. 
+
+
+[Discussion on Cloudy Nights] (https://www.cloudynights.com/forums/topic/329521-plop-3-point-cell-question/)
+
 # Mirror Cell Support Optimizer
 
 A free, open-source tool for amateur telescope makers to analyze and optimize the placement of three symmetric support points for a Newtonian telescope primary mirror. It uses finite element analysis to compute gravitational surface deformation and sweeps the support radius to find the placement that minimizes either RMS or peak-to-valley (PV) wavefront error.
@@ -16,14 +50,23 @@ The FEA uses the **Morley triangle element** via [scikit-fem](https://github.com
 
 **Key optimization:** The mesh, stiffness matrix K, and load vector f are assembled once. For each candidate support radius in the sweep, only the constraint DOFs change — the system is re-condensed and re-solved. With ~8000 DOFs (nrefs=5), each solve takes milliseconds, making the full sweep fast.
 
+### Modes
+
+The optimizer supports two analysis modes:
+
+- **Standard Mode** (default) — Measures surface deformation in nanometers after removing piston and tilt. This is the physical deflection of the glass.
+- **PLOP Mode** (`--mode plop`) — Measures wavefront error at the focus in waves (lambda = 550nm). Surface deformation is doubled (reflection doubles the optical path difference), then piston, tilt, and **defocus** are removed. The defocus removal simulates the observer refocusing the telescope to minimize error at the focal plane, giving a more optically relevant figure of merit. This mimics the approach used by the [PLOP](https://github.com/davidlewistoronto/plop) software.
+
 ### Metrics
 
-Two surface error metrics are computed at every sweep point:
+Two error metrics are computed at every sweep point (in both modes):
 
-- **RMS** — Area-weighted root-mean-square of the surface deflection after removing piston and tilt (best-fit plane subtraction via weighted least squares). RMS captures the overall surface quality and correlates well with the Strehl ratio.
-- **PV** (Peak-to-Valley) — Maximum minus minimum deflection after piston/tilt removal. PV is sensitive to the single worst point on the surface. The classical Grubb result of 0.6789R was derived to minimize this metric.
+- **RMS** — Area-weighted root-mean-square of the error after correction. RMS captures the overall surface quality and correlates well with the Strehl ratio.
+- **PV** (Peak-to-Valley) — Maximum minus minimum error after correction. PV is sensitive to the single worst point on the surface. The classical Grubb result of 0.6789R was derived to minimize this metric.
 
 The `--metric` flag controls which one drives the optimization. Both are always reported in the output table.
+
+In PLOP mode, the output also includes an optical quality assessment based on the Marechal criterion (diffraction-limited when RMS <= lambda/14).
 
 ### Central Obstruction
 
@@ -52,6 +95,8 @@ python mirror_cell.py --diameter <mm> --thickness <mm> [options]
 | `--diameter` | Primary mirror diameter in mm (required) |
 | `--thickness` | Mirror thickness in mm (required) |
 | `--secondary` | Secondary mirror diameter in mm (central obstruction) |
+| `--mode` | Analysis mode: `standard` (default) or `plop` (wavefront error in waves) |
+| `--focal-length` | Mirror focal length in mm (for PLOP mode f-ratio display) |
 | `--metric` | Optimization metric: `rms` (default) or `pv` (peak-to-valley) |
 | `--support-radius` | Evaluate a single support radius as a fraction of R (0.0-1.0) |
 | `--optimize` | Sweep support radius to find the optimum (default if no `--support-radius`) |
@@ -83,6 +128,18 @@ Evaluate a specific support radius:
 
 ```bash
 python mirror_cell.py --diameter 150 --thickness 25 --support-radius 0.68
+```
+
+Optimize in PLOP mode (wavefront error after refocusing):
+
+```bash
+python mirror_cell.py --diameter 150 --thickness 25 --mode plop --focal-length 750
+```
+
+PLOP mode with a specific support radius:
+
+```bash
+python mirror_cell.py --diameter 150 --thickness 25 --mode plop --support-radius 0.67
 ```
 
 ## Example Results
@@ -161,6 +218,47 @@ Optimal support radius: 0.6364R = 47.73 mm
 
 ---
 
+### 5. PLOP Mode — 150mm f/6 mirror with 43mm obstruction
+
+```bash
+python mirror_cell.py --diameter 150 --thickness 25 --secondary 43 --mode plop --focal-length 900 --nrefs 6 --n-points 100
+```
+
+```
+Mode:             PLOP (wavefront error)
+Mirror diameter:  150.0 mm
+Mirror radius:    75.0 mm
+Mirror thickness: 25.0 mm
+Focal length:     900.0 mm (f/6.0)
+Secondary diam:   43.0 mm (central obstruction)
+  Obstruction:    28.7% by diameter
+Wavelength:       550 nm (reference)
+Refocusing:       enabled (defocus term removed)
+Optimizing:       RMS
+
+Optimal support radius: 0.3758R = 28.18 mm
+  RMS wavefront error at optimum: 0.0017 waves (0.0004 Rayleigh)
+  P-V wavefront error at optimum: 0.0076 waves
+  Optical quality: Diffraction-limited (Marechal criterion: RMS <= lambda/14)
+
+Classical reference (Grubb, PV-optimal): 0.6789R
+Deviation from classical PV-optimal:     44.7%
+```
+
+![Surface deformation, PLOP mode, 43mm obstruction](images/deformation_plop_obstruction.png)
+
+The support points (black triangles) sit well inside the mirror — at 0.376R rather than the classical 0.679R. The deformation pattern still shows three-fold symmetry, but the supports are now closer to balancing the higher-order wavefront residuals that remain after refocusing.
+
+![Wavefront error vs support radius, PLOP mode, 43mm obstruction](images/metric_vs_radius_plop_obstruction.png)
+
+Both RMS and P-V wavefront error (in waves at 550nm) increase steeply toward the mirror edge. The broad, flat minimum around 0.3-0.4R contrasts sharply with the Standard mode optimum near 0.64R. The classical Grubb reference (green dotted line at 0.6789R) falls in a region where wavefront error is roughly 3x higher than the PLOP optimum.
+
+In PLOP mode the optimizer removes piston, tilt, **and defocus** from the wavefront (simulating the observer refocusing the telescope). This absorbs the dominant parabolic sag, so the remaining higher-order residuals are minimized at a much smaller support radius (~0.38R) compared to Standard mode (~0.64R). The wavefront error is extremely small — well within diffraction-limited quality — confirming that three-point support is more than adequate for a mirror of this size.
+
+This matches the behavior seen in the [PLOP](https://github.com/davidlewistoronto/plop) software, which also tends to recommend support radii significantly inside the classical Grubb value when optimizing wavefront error after refocusing.
+
+---
+
 ### Summary comparison
 
 | Configuration | Metric | Optimal r/R | RMS (nm) | PV (nm) |
@@ -169,6 +267,10 @@ Optimal support radius: 0.6364R = 47.73 mm
 | No obstruction | PV | 0.6364 | 1.25 | 5.25 |
 | 43mm obstruction | RMS | 0.6364 | 1.29 | 5.25 |
 | 43mm obstruction | PV | 0.6364 | 1.29 | 5.25 |
+
+| Configuration | Mode | Optimal r/R | RMS (waves) | PV (waves) |
+|---|---|---|---|---|
+| 43mm obstruction | PLOP (RMS) | 0.3758 | 0.0017 | 0.0076 |
 
 Key observations:
 

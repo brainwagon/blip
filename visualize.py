@@ -58,16 +58,30 @@ def plot_metric_vs_radius(results):
     """Plot surface error metric vs support radius fraction.
 
     Plots both RMS and PV curves, highlighting the optimized metric's optimum.
+    Adapts labels and units based on mode (standard: nm, PLOP: waves).
 
     Args:
         results: Dict from optimize_support_radius() containing radii_frac,
-                 rms_values, pv_values, optimal_frac, min_rms, min_pv, metric.
+                 rms_values, pv_values, optimal_frac, min_rms, min_pv, metric, mode.
     """
     radii_frac = results['radii_frac']
     rms_values = results['rms_values']
     pv_values = results['pv_values']
     optimal_frac = results['optimal_frac']
     metric = results['metric']
+    mode = results.get('mode', 'standard')
+
+    # Units and labels depend on mode
+    if mode == 'plop':
+        unit = 'waves'
+        rms_label = 'RMS Wavefront Error (waves)'
+        pv_label = 'P-V Wavefront Error (waves)'
+        title_prefix = 'Wavefront Error'
+    else:
+        unit = 'nm'
+        rms_label = 'RMS Surface Deformation (nm)'
+        pv_label = 'Peak-to-Valley Deformation (nm)'
+        title_prefix = 'Surface Deformation'
 
     fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
 
@@ -76,7 +90,7 @@ def plot_metric_vs_radius(results):
     line_rms, = ax1.plot(radii_frac, rms_values, '-o', color=color_rms,
                          markersize=4, linewidth=1.5, label='RMS')
     ax1.set_xlabel('Support Radius (fraction of mirror radius)')
-    ax1.set_ylabel('RMS Surface Deformation (nm)', color=color_rms)
+    ax1.set_ylabel(rms_label, color=color_rms)
     ax1.tick_params(axis='y', labelcolor=color_rms)
 
     # Plot PV on right axis
@@ -84,8 +98,14 @@ def plot_metric_vs_radius(results):
     color_pv = 'tab:orange'
     line_pv, = ax2.plot(radii_frac, pv_values, '-s', color=color_pv,
                         markersize=4, linewidth=1.5, label='PV')
-    ax2.set_ylabel('Peak-to-Valley Deformation (nm)', color=color_pv)
+    ax2.set_ylabel(pv_label, color=color_pv)
     ax2.tick_params(axis='y', labelcolor=color_pv)
+
+    # Format annotation based on mode
+    if mode == 'plop':
+        fmt = '.4f'  # more decimals for waves (small numbers)
+    else:
+        fmt = '.1f'
 
     # Mark the optimum on the optimized metric's axis
     if metric == 'rms':
@@ -93,7 +113,7 @@ def plot_metric_vs_radius(results):
         ax1.plot(optimal_frac, opt_val, 'r*', markersize=15, zorder=5)
         ax1.axvline(optimal_frac, color='r', linestyle='--', alpha=0.7)
         ann_ax = ax1
-        ann_label = f'{optimal_frac:.4f}R\n{opt_val:.1f} nm RMS'
+        ann_label = f'{optimal_frac:.4f}R\n{opt_val:{fmt}} {unit} RMS'
         ann_y = opt_val
         y_range = max(rms_values) - min(rms_values)
     else:
@@ -101,7 +121,7 @@ def plot_metric_vs_radius(results):
         ax2.plot(optimal_frac, opt_val, 'r*', markersize=15, zorder=5)
         ax2.axvline(optimal_frac, color='r', linestyle='--', alpha=0.7)
         ann_ax = ax2
-        ann_label = f'{optimal_frac:.4f}R\n{opt_val:.1f} nm PV'
+        ann_label = f'{optimal_frac:.4f}R\n{opt_val:{fmt}} {unit} PV'
         ann_y = opt_val
         y_range = max(pv_values) - min(pv_values)
 
@@ -125,7 +145,7 @@ def plot_metric_vs_radius(results):
     ax1.legend(lines, labels, loc='upper left')
 
     metric_name = 'RMS' if metric == 'rms' else 'PV'
-    ax1.set_title(f'Surface Deformation vs Support Radius (optimizing {metric_name})')
+    ax1.set_title(f'{title_prefix} vs Support Radius (optimizing {metric_name})')
     ax1.grid(True, alpha=0.3)
 
     fig.tight_layout()

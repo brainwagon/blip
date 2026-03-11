@@ -1,6 +1,13 @@
-"""Surface error metrics with piston/tilt removal and obstruction masking."""
+"""Surface error metrics with piston/tilt removal and obstruction masking.
+
+Includes both surface deformation metrics (Standard Mode) and wavefront
+error metrics (PLOP Mode) with defocus removal for refocusing simulation.
+"""
 
 import numpy as np
+
+# Reference wavelength for wavefront error in waves
+WAVELENGTH_NM = 550.0  # nm (visible light)
 
 
 def compute_nodal_areas(mesh):
@@ -52,6 +59,30 @@ def remove_piston_tilt(w, x, y, areas):
     return w - plane
 
 
+def remove_piston_tilt_defocus(w, x, y, areas):
+    """Remove best-fit piston, tilt, and defocus using area-weighted least squares.
+
+    Fits w = a + b*x + c*y + d*(x^2 + y^2) and subtracts it.
+    The defocus term (r^2) simulates the observer refocusing the telescope
+    to minimize wavefront error at the focal plane.
+
+    Args:
+        w: Deflection values at nodes.
+        x, y: Node coordinates.
+        areas: Nodal area weights.
+
+    Returns:
+        Deflection with piston, tilt, and defocus removed.
+    """
+    r2 = x**2 + y**2
+    A = np.column_stack([np.ones_like(x), x, y, r2])
+    W = np.diag(areas)
+    AtW = A.T @ W
+    coeffs = np.linalg.solve(AtW @ A, AtW @ w)
+    fit = A @ coeffs
+    return w - fit
+
+
 def _corrected_deflection(mesh, basis, w, obstruction_radius=0.0):
     """Extract masked, piston/tilt-corrected nodal deflection.
 
@@ -85,6 +116,46 @@ def _corrected_deflection(mesh, basis, w, obstruction_radius=0.0):
 
     w_corrected = remove_piston_tilt(w_masked, x_masked, y_masked, areas_masked)
     return w_corrected, areas_masked
+
+
+def _wavefront_corrected(mesh, basis, w, obstruction_radius=0.0):
+    """Extract masked, piston/tilt/defocus-corrected wavefront error.
+
+    Converts surface deformation to wavefront error (2x for reflection)
+    and removes piston, tilt, and defocus to simulate refocusing.
+
+    Args:
+        mesh: Triangular mesh.
+        basis: FEM basis (Morley element).
+        w: Full DOF solution vector.
+        obstruction_radius: Radius of central obstruction in meters.
+
+    Returns:
+        Tuple of (wf_corrected, areas_masked) — corrected wavefront error
+        in meters and corresponding nodal areas. Returns (None, None)
+        if all nodes are masked.
+    """
+    w_nodal = w[basis.nodal_dofs[0]]
+    x = mesh.p[0]
+    y = mesh.p[1]
+
+    areas = compute_nodal_areas(mesh)
+
+    # Mask out nodes inside the central obstruction
+    r = np.sqrt(x**2 + y**2)
+    mask = r >= obstruction_radius
+    if not np.any(mask):
+        return None, None
+
+    # Wavefront error = 2 * surface deformation (reflection doubles OPD)
+    wf_masked = 2.0 * w_nodal[mask]
+    x_masked = x[mask]
+    y_masked = y[mask]
+    areas_masked = areas[mask]
+
+    # Remove piston, tilt, and defocus (simulates refocusing)
+    wf_corrected = remove_piston_tilt_defocus(wf_masked, x_masked, y_masked, areas_masked)
+    return wf_corrected, areas_masked
 
 
 def compute_rms(mesh, basis, w, obstruction_radius=0.0):
@@ -138,3 +209,56 @@ def compute_pv(mesh, basis, w, obstruction_radius=0.0):
 
     # Convert from meters to nanometers
     return pv * 1e9
+
+
+def compute_wavefront_rms(mesh, basis, w, obstruction_radius=0.0):
+    """Compute area-weighted RMS wavefront error after piston/tilt/defocus removal.
+
+    Converts surface deformation to wavefront error (2x for reflection),
+    removes piston, tilt, and defocus (simulating refocusing), then computes
+    area-weighted RMS. Result is in waves (lambda = 550nm).
+
+    Args:
+        mesh: Triangular mesh.
+        basis: FEM basis (Morley element).
+        w: Full DOF solution vector.
+        obstruction_radius: Radius of central obstruction in meters.
+
+    Returns:
+        RMS wavefront error in waves (lambda = 550nm).
+    """
+    wf_corrected, areas_masked = _wavefront_corrected(mesh, basis, w, obstruction_radius)
+    if wf_corrected is None:
+        return 0.0
+
+    total_area = np.sum(areas_masked)
+    rms_m = np.sqrt(np.sum(areas_masked * wf_corrected**2) / total_area)
+
+    # Convert from meters to waves
+    return rms_m / (WAVELENGTH_NM * 1e-9)
+
+
+def compute_wavefront_pv(mesh, basis, w, obstruction_radius=0.0):
+    """Compute peak-to-valley wavefront error after piston/tilt/defocus removal.
+
+    Converts surface deformation to wavefront error (2x for reflection),
+    removes piston, tilt, and defocus (simulating refocusing), then computes
+    P-V. Result is in waves (lambda = 550nm).
+
+    Args:
+        mesh: Triangular mesh.
+        basis: FEM basis (Morley element).
+        w: Full DOF solution vector.
+        obstruction_radius: Radius of central obstruction in meters.
+
+    Returns:
+        Peak-to-valley wavefront error in waves (lambda = 550nm).
+    """
+    wf_corrected, areas_masked = _wavefront_corrected(mesh, basis, w, obstruction_radius)
+    if wf_corrected is None:
+        return 0.0
+
+    pv_m = np.max(wf_corrected) - np.min(wf_corrected)
+
+    # Convert from meters to waves
+    return pv_m / (WAVELENGTH_NM * 1e-9)
