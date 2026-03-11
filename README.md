@@ -91,10 +91,11 @@ The optimizer supports two analysis modes:
 
 Two error metrics are computed at every sweep point (in both modes):
 
-- **RMS** — Area-weighted root-mean-square of the error after correction. RMS captures the overall surface quality and correlates well with the Strehl ratio.
+- **RMS** — Area-weighted root-mean-square of the error after correction. RMS captures the overall surface quality and correlates directly with the Strehl ratio.
 - **PV** (Peak-to-Valley) — Maximum minus minimum error after correction. PV is sensitive to the single worst point on the surface. The classical Grubb result of 0.6789R was derived to minimize this metric.
+- **Strehl ratio** — Computed from RMS via the Maréchal approximation: `Strehl = exp(-(2*pi*rms_waves)^2)`. A Strehl ratio above 0.80 is the standard threshold for diffraction-limited performance. The Strehl ratio is printed in the console output and plotted as a second subplot below the RMS/PV curve during optimization.
 
-The `--metric` flag controls which one drives the optimization. Both are always reported in the output table.
+The `--metric` flag controls which one drives the optimization. All metrics are always reported in the output.
 
 In PLOP mode, the output also includes an optical quality assessment based on the Marechal criterion (diffraction-limited when RMS <= lambda/14).
 
@@ -193,6 +194,7 @@ Optimizing:       RMS
 Optimal support radius: 0.6485R = 48.64 mm
   RMS at optimum: 1.24 nm
   PV  at optimum: 5.29 nm
+  Strehl ratio:   0.9998
 ```
 
 ![Surface deformation, no obstruction, RMS-optimal](images/deformation_no_obstruction.png)
@@ -201,7 +203,7 @@ The deformation map shows the characteristic three-fold symmetric pattern. The m
 
 ![RMS and PV vs support radius, no obstruction, optimizing RMS](images/metric_vs_radius_no_obstruction_rms.png)
 
-Both RMS (blue, left axis) and PV (orange, right axis) are plotted simultaneously. The red dashed line marks the RMS optimum at 0.6485R. The green dotted line shows the classical Grubb reference at 0.6789R. The curves are broadly similar in shape but their minima occur at slightly different radii.
+The top panel plots RMS (blue, left axis) and PV (orange, right axis) simultaneously. The red dashed line marks the RMS optimum at 0.6485R. The green dotted line shows the classical Grubb reference at 0.6789R. The bottom panel shows the corresponding Strehl ratio — essentially 1.0 across the full range for a mirror this small, confirming that three-point support is more than adequate.
 
 ---
 
@@ -212,13 +214,14 @@ Optimizing:       Peak-to-Valley
 Optimal support radius: 0.6364R = 47.73 mm
   RMS at optimum: 1.25 nm
   PV  at optimum: 5.25 nm
+  Strehl ratio:   0.9998
 ```
 
 ![Surface deformation, no obstruction, PV-optimal](images/deformation_no_obstruction_pv.png)
 
 ![RMS and PV vs support radius, no obstruction, optimizing PV](images/metric_vs_radius_no_obstruction_pv.png)
 
-The PV-optimal radius (0.6364R) is slightly smaller than the RMS-optimal (0.6485R). The PV curve has a broader, flatter minimum than RMS, making it less sensitive to exact placement near the optimum.
+The PV-optimal radius (0.6364R) is slightly smaller than the RMS-optimal (0.6485R). The PV curve has a broader, flatter minimum than RMS, making it less sensitive to exact placement near the optimum. The Strehl subplot confirms near-perfect optical quality across the full sweep range.
 
 ---
 
@@ -231,6 +234,7 @@ Optimizing:       RMS
 Optimal support radius: 0.6364R = 47.73 mm
   RMS at optimum: 1.29 nm
   PV  at optimum: 5.25 nm
+  Strehl ratio:   0.9998
 ```
 
 ![Surface deformation, 43mm obstruction](images/deformation_with_obstruction.png)
@@ -248,6 +252,7 @@ Optimizing:       Peak-to-Valley
 Optimal support radius: 0.6364R = 47.73 mm
   RMS at optimum: 1.29 nm
   PV  at optimum: 5.25 nm
+  Strehl ratio:   0.9998
 ```
 
 ![Surface deformation, 43mm obstruction, PV-optimal](images/deformation_with_obstruction_pv.png)
@@ -277,6 +282,7 @@ Optimizing:       RMS
 Optimal support radius: 0.3758R = 28.18 mm
   RMS wavefront error at optimum: 0.0017 waves (0.0004 Rayleigh)
   P-V wavefront error at optimum: 0.0076 waves
+  Strehl ratio at optimum:        0.9999
   Optical quality: Diffraction-limited (Marechal criterion: RMS <= lambda/14)
 
 Classical reference (Grubb, PV-optimal): 0.6789R
@@ -289,7 +295,7 @@ The support points (black triangles) sit well inside the mirror — at 0.376R ra
 
 ![Wavefront error vs support radius, PLOP mode, 43mm obstruction](images/metric_vs_radius_plop_obstruction.png)
 
-Both RMS and P-V wavefront error (in waves at 550nm) increase steeply toward the mirror edge. The broad, flat minimum around 0.3-0.4R contrasts sharply with the Standard mode optimum near 0.64R. The classical Grubb reference (green dotted line at 0.6789R) falls in a region where wavefront error is roughly 3x higher than the PLOP optimum.
+The top panel shows RMS and P-V wavefront error (in waves at 550nm) increasing steeply toward the mirror edge. The broad, flat minimum around 0.3-0.4R contrasts sharply with the Standard mode optimum near 0.64R. The classical Grubb reference (green dotted line at 0.6789R) falls in a region where wavefront error is roughly 3x higher than the PLOP optimum. The bottom panel shows the Strehl ratio remains essentially 1.0 near the optimum, dropping only at the extreme edges of the sweep range.
 
 In PLOP mode the optimizer removes piston, tilt, **and defocus** from the wavefront (simulating the observer refocusing the telescope). This absorbs the dominant parabolic sag, so the remaining higher-order residuals are minimized at a much smaller support radius (~0.38R) compared to Standard mode (~0.64R). The wavefront error is extremely small — well within diffraction-limited quality — confirming that three-point support is more than adequate for a mirror of this size.
 
@@ -299,16 +305,16 @@ This matches the behavior seen in the [PLOP](https://github.com/davidlewistoront
 
 ### Summary comparison
 
-| Configuration | Metric | Optimal r/R | RMS (nm) | PV (nm) |
-|---|---|---|---|---|
-| No obstruction | RMS | 0.6485 | 1.24 | 5.29 |
-| No obstruction | PV | 0.6364 | 1.25 | 5.25 |
-| 43mm obstruction | RMS | 0.6364 | 1.29 | 5.25 |
-| 43mm obstruction | PV | 0.6364 | 1.29 | 5.25 |
+| Configuration | Metric | Optimal r/R | RMS (nm) | PV (nm) | Strehl |
+|---|---|---|---|---|---|
+| No obstruction | RMS | 0.6485 | 1.24 | 5.29 | 0.9998 |
+| No obstruction | PV | 0.6364 | 1.25 | 5.25 | 0.9998 |
+| 43mm obstruction | RMS | 0.6364 | 1.29 | 5.25 | 0.9998 |
+| 43mm obstruction | PV | 0.6364 | 1.29 | 5.25 | 0.9998 |
 
-| Configuration | Mode | Optimal r/R | RMS (waves) | PV (waves) |
-|---|---|---|---|---|
-| 43mm obstruction | PLOP (RMS) | 0.3758 | 0.0017 | 0.0076 |
+| Configuration | Mode | Optimal r/R | RMS (waves) | PV (waves) | Strehl |
+|---|---|---|---|---|---|
+| 43mm obstruction | PLOP (RMS) | 0.3758 | 0.0017 | 0.0076 | 0.9999 |
 
 Key observations:
 
@@ -325,7 +331,7 @@ mirror_cell.py    — CLI entry point, argument parsing, output formatting
 plate_fem.py      — FEA engine: mesh, stiffness/load assembly, support constraints, solve
 rms_calc.py       — Surface error metrics (RMS, PV) with piston/tilt removal and obstruction masking
 optimizer.py      — Support radius sweep (reuses single K/f assembly)
-visualize.py      — Matplotlib: deformation map, dual-axis metric-vs-radius curve
+visualize.py      — Matplotlib: deformation map, dual-axis metric-vs-radius curve with Strehl subplot
 requirements.txt  — Python dependencies
 ```
 

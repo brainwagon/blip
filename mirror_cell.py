@@ -176,8 +176,11 @@ def main(argv=None):
         print(f"Optimized metric: {metric_name}")
         print(f"Optimal support radius: {optimal_frac:.4f}R = {optimal_frac * args.diameter/2:.2f} mm")
         if is_plop:
+            rms_waves = min_rms
+            strehl = np.exp(-(2 * np.pi * rms_waves)**2)
             print(f"  RMS wavefront error at optimum: {min_rms:.4f} waves ({min_rms/4:.4f} Rayleigh)")
             print(f"  P-V wavefront error at optimum: {min_pv:.4f} waves")
+            print(f"  Strehl ratio at optimum:        {strehl:.4f}")
             # Optical quality assessment
             if min_rms <= 1/14:
                 quality = "Diffraction-limited (Marechal criterion: RMS <= lambda/14)"
@@ -189,8 +192,11 @@ def main(argv=None):
                 quality = "Poor (RMS > lambda/4)"
             print(f"  Optical quality: {quality}")
         else:
+            rms_waves = min_rms / 550.0  # nm to waves
+            strehl = np.exp(-(2 * np.pi * rms_waves)**2)
             print(f"  RMS at optimum: {min_rms:.2f} nm")
             print(f"  PV  at optimum: {min_pv:.2f} nm")
+            print(f"  Strehl ratio:   {strehl:.4f}")
 
         # Compare with classical reference
         classical_pv = 0.6789

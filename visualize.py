@@ -83,7 +83,15 @@ def plot_metric_vs_radius(results):
         pv_label = 'Peak-to-Valley Deformation (nm)'
         title_prefix = 'Surface Deformation'
 
-    fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
+    # Compute Strehl ratio for each radius point
+    if mode == 'plop':
+        rms_waves = np.array(rms_values)
+    else:
+        rms_waves = np.array(rms_values) / 550.0  # nm to waves
+    strehl_values = np.exp(-(2 * np.pi * rms_waves)**2)
+
+    fig, (ax1, ax_strehl) = plt.subplots(2, 1, figsize=(9, 9),
+                                          gridspec_kw={'height_ratios': [3, 2]})
 
     # Plot RMS on left axis
     color_rms = 'tab:blue'
@@ -147,6 +155,33 @@ def plot_metric_vs_radius(results):
     metric_name = 'RMS' if metric == 'rms' else 'PV'
     ax1.set_title(f'{title_prefix} vs Support Radius (optimizing {metric_name})')
     ax1.grid(True, alpha=0.3)
+
+    # --- Strehl ratio subplot ---
+    ax_strehl.plot(radii_frac, strehl_values, '-o', color='tab:purple',
+                   markersize=4, linewidth=1.5, label='Strehl ratio')
+
+    # Mark optimum
+    opt_idx = np.argmin(np.abs(np.array(radii_frac) - optimal_frac))
+    opt_strehl = strehl_values[opt_idx]
+    ax_strehl.plot(optimal_frac, opt_strehl, 'r*', markersize=15, zorder=5)
+    ax_strehl.axvline(optimal_frac, color='r', linestyle='--', alpha=0.7)
+    ax_strehl.annotate(
+        f'{optimal_frac:.4f}R\nStrehl {opt_strehl:.4f}',
+        xy=(optimal_frac, opt_strehl),
+        xytext=(optimal_frac + 0.05, opt_strehl - 0.05),
+        arrowprops=dict(arrowstyle='->', color='red'),
+        fontsize=10, color='red',
+    )
+
+    # Mark classical reference
+    ax_strehl.axvline(0.6789, color='green', linestyle=':', alpha=0.5, label='Classical 0.6789R')
+
+    ax_strehl.set_xlabel('Support Radius (fraction of mirror radius)')
+    ax_strehl.set_ylabel('Strehl Ratio')
+    ax_strehl.set_title('Strehl Ratio vs Support Radius')
+    ax_strehl.set_ylim(0, 1.05)
+    ax_strehl.legend(loc='lower right')
+    ax_strehl.grid(True, alpha=0.3)
 
     fig.tight_layout()
     return fig
