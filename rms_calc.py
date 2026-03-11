@@ -1,4 +1,4 @@
-"""Area-weighted RMS computation with piston/tilt removal."""
+"""Surface error metrics with piston/tilt removal and obstruction masking."""
 
 import numpy as np
 
@@ -52,6 +52,41 @@ def remove_piston_tilt(w, x, y, areas):
     return w - plane
 
 
+def _corrected_deflection(mesh, basis, w, obstruction_radius=0.0):
+    """Extract masked, piston/tilt-corrected nodal deflection.
+
+    Args:
+        mesh: Triangular mesh.
+        basis: FEM basis (Morley element).
+        w: Full DOF solution vector.
+        obstruction_radius: Radius of central obstruction in meters.
+
+    Returns:
+        Tuple of (w_corrected, areas_masked) — corrected deflections and
+        corresponding nodal areas for unobstructed nodes. Returns (None, None)
+        if all nodes are masked.
+    """
+    w_nodal = w[basis.nodal_dofs[0]]
+    x = mesh.p[0]
+    y = mesh.p[1]
+
+    areas = compute_nodal_areas(mesh)
+
+    # Mask out nodes inside the central obstruction
+    r = np.sqrt(x**2 + y**2)
+    mask = r >= obstruction_radius
+    if not np.any(mask):
+        return None, None
+
+    w_masked = w_nodal[mask]
+    x_masked = x[mask]
+    y_masked = y[mask]
+    areas_masked = areas[mask]
+
+    w_corrected = remove_piston_tilt(w_masked, x_masked, y_masked, areas_masked)
+    return w_corrected, areas_masked
+
+
 def compute_rms(mesh, basis, w, obstruction_radius=0.0):
     """Compute area-weighted RMS of deflection after piston/tilt removal.
 
@@ -68,28 +103,38 @@ def compute_rms(mesh, basis, w, obstruction_radius=0.0):
     Returns:
         RMS deflection in nanometers.
     """
-    # Extract nodal deflection DOFs (first row of nodal_dofs)
-    w_nodal = w[basis.nodal_dofs[0]]
-    x = mesh.p[0]
-    y = mesh.p[1]
-
-    areas = compute_nodal_areas(mesh)
-
-    # Mask out nodes inside the central obstruction
-    r = np.sqrt(x**2 + y**2)
-    mask = r >= obstruction_radius
-    if not np.any(mask):
+    w_corrected, areas_masked = _corrected_deflection(mesh, basis, w, obstruction_radius)
+    if w_corrected is None:
         return 0.0
-
-    w_masked = w_nodal[mask]
-    x_masked = x[mask]
-    y_masked = y[mask]
-    areas_masked = areas[mask]
-
-    w_corrected = remove_piston_tilt(w_masked, x_masked, y_masked, areas_masked)
 
     total_area = np.sum(areas_masked)
     rms = np.sqrt(np.sum(areas_masked * w_corrected**2) / total_area)
 
     # Convert from meters to nanometers
     return rms * 1e9
+
+
+def compute_pv(mesh, basis, w, obstruction_radius=0.0):
+    """Compute peak-to-valley deflection after piston/tilt removal.
+
+    Nodes inside the central obstruction (secondary mirror shadow) are
+    excluded from both the piston/tilt fit and the PV computation.
+
+    Args:
+        mesh: Triangular mesh.
+        basis: FEM basis (Morley element).
+        w: Full DOF solution vector.
+        obstruction_radius: Radius of central obstruction in meters.
+            Nodes with r < obstruction_radius are excluded. Default 0 (none).
+
+    Returns:
+        Peak-to-valley deflection in nanometers.
+    """
+    w_corrected, areas_masked = _corrected_deflection(mesh, basis, w, obstruction_radius)
+    if w_corrected is None:
+        return 0.0
+
+    pv = np.max(w_corrected) - np.min(w_corrected)
+
+    # Convert from meters to nanometers
+    return pv * 1e9

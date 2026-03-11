@@ -7,7 +7,7 @@ from plate_fem import (
     find_support_dofs,
     solve_plate,
 )
-from rms_calc import compute_rms
+from rms_calc import compute_rms, compute_pv
 
 
 # Material properties for Pyrex (borosilicate glass)
@@ -28,11 +28,14 @@ def optimize_support_radius(
     r_min_frac=0.2,
     r_max_frac=0.8,
     obstruction_radius=0.0,
+    metric='rms',
 ):
-    """Sweep support radius to find optimal placement minimizing RMS deformation.
+    """Sweep support radius to find optimal placement.
 
     Assembles the stiffness matrix and load vector once, then re-solves for
-    each support radius by only changing the constraint DOFs.
+    each support radius by only changing the constraint DOFs. Both RMS and PV
+    are computed at every sweep point; the metric parameter controls which
+    one is minimized to find the optimum.
 
     Args:
         radius_m: Mirror radius in meters.
@@ -44,13 +47,18 @@ def optimize_support_radius(
         n_points: Number of sweep points.
         r_min_frac: Minimum support radius as fraction of mirror radius.
         r_max_frac: Maximum support radius as fraction of mirror radius.
+        obstruction_radius: Central obstruction radius in meters.
+        metric: 'rms' or 'pv' — which metric to minimize.
 
     Returns:
-        Tuple of (radii_frac, rms_values, optimal_frac, min_rms):
+        Dict with keys:
             radii_frac: Array of support radius fractions tested.
             rms_values: Array of RMS values in nanometers.
+            pv_values: Array of PV values in nanometers.
             optimal_frac: Optimal support radius as fraction of mirror radius.
-            min_rms: Minimum RMS in nanometers.
+            min_rms: RMS at optimal radius (nm).
+            min_pv: PV at optimal radius (nm).
+            metric: Which metric was optimized ('rms' or 'pv').
     """
     # Flexural rigidity
     D = E * thickness_m**3 / (12 * (1 - nu**2))
@@ -66,30 +74,41 @@ def optimize_support_radius(
     # Sweep support radius
     radii_frac = np.linspace(r_min_frac, r_max_frac, n_points)
     rms_values = np.zeros(n_points)
+    pv_values = np.zeros(n_points)
 
     for i, frac in enumerate(radii_frac):
         support_r = frac * radius_m
         support_dofs = find_support_dofs(basis, mesh, support_r)
         w = solve_plate(K, f, support_dofs)
         rms_values[i] = compute_rms(mesh, basis, w, obstruction_radius)
+        pv_values[i] = compute_pv(mesh, basis, w, obstruction_radius)
 
-    # Find optimum
-    best_idx = np.argmin(rms_values)
+    # Find optimum based on chosen metric
+    target = rms_values if metric == 'rms' else pv_values
+    best_idx = np.argmin(target)
     optimal_frac = radii_frac[best_idx]
-    min_rms = rms_values[best_idx]
 
-    return radii_frac, rms_values, optimal_frac, min_rms
+    return {
+        'radii_frac': radii_frac,
+        'rms_values': rms_values,
+        'pv_values': pv_values,
+        'optimal_frac': optimal_frac,
+        'min_rms': rms_values[best_idx],
+        'min_pv': pv_values[best_idx],
+        'metric': metric,
+    }
 
 
 def evaluate_single(radius_m, thickness_m, support_frac, E=PYREX_E, nu=PYREX_NU, rho=PYREX_RHO, nrefs=5, obstruction_radius=0.0):
     """Evaluate deformation for a single support radius.
 
     Returns:
-        Tuple of (mesh, basis, w, rms_nm, support_points):
+        Dict with keys:
             mesh: The FEM mesh.
             basis: The FEM basis.
             w: Full DOF solution vector.
             rms_nm: RMS deflection in nanometers.
+            pv_nm: Peak-to-valley deflection in nanometers.
             support_points: (N, 2) array of support point coordinates.
     """
     D = E * thickness_m**3 / (12 * (1 - nu**2))
@@ -104,6 +123,7 @@ def evaluate_single(radius_m, thickness_m, support_frac, E=PYREX_E, nu=PYREX_NU,
     support_dofs = find_support_dofs(basis, mesh, support_r)
     w = solve_plate(K, f, support_dofs)
     rms_nm = compute_rms(mesh, basis, w, obstruction_radius)
+    pv_nm = compute_pv(mesh, basis, w, obstruction_radius)
 
     # Compute support point coordinates for visualization
     angles = np.linspace(0, 2 * np.pi, 3, endpoint=False)
@@ -112,4 +132,11 @@ def evaluate_single(radius_m, thickness_m, support_frac, E=PYREX_E, nu=PYREX_NU,
         support_r * np.sin(angles),
     ])
 
-    return mesh, basis, w, rms_nm, support_points
+    return {
+        'mesh': mesh,
+        'basis': basis,
+        'w': w,
+        'rms_nm': rms_nm,
+        'pv_nm': pv_nm,
+        'support_points': support_points,
+    }

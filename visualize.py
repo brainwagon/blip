@@ -1,4 +1,4 @@
-"""Visualization: deformation map and RMS-vs-radius curve."""
+"""Visualization: deformation map and metric-vs-radius curve."""
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -54,40 +54,79 @@ def plot_deformation(mesh, w_nodal, support_points, title=None, obstruction_radi
     return fig
 
 
-def plot_rms_vs_radius(radii_frac, rms_values, optimal_frac, min_rms):
-    """Plot RMS deformation vs support radius fraction.
+def plot_metric_vs_radius(results):
+    """Plot surface error metric vs support radius fraction.
+
+    Plots both RMS and PV curves, highlighting the optimized metric's optimum.
 
     Args:
-        radii_frac: Array of support radius fractions (r/R).
-        rms_values: Array of RMS values in nanometers.
-        optimal_frac: Optimal support radius fraction.
-        min_rms: Minimum RMS in nanometers.
+        results: Dict from optimize_support_radius() containing radii_frac,
+                 rms_values, pv_values, optimal_frac, min_rms, min_pv, metric.
     """
-    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    ax.plot(radii_frac, rms_values, 'b-o', markersize=4, linewidth=1.5)
-    ax.axvline(optimal_frac, color='r', linestyle='--', alpha=0.7,
-               label=f'Optimum: {optimal_frac:.4f}R')
-    ax.plot(optimal_frac, min_rms, 'r*', markersize=15, zorder=5)
+    radii_frac = results['radii_frac']
+    rms_values = results['rms_values']
+    pv_values = results['pv_values']
+    optimal_frac = results['optimal_frac']
+    metric = results['metric']
 
-    # Annotate the optimum
-    ax.annotate(
-        f'{optimal_frac:.4f}R\n{min_rms:.1f} nm RMS',
-        xy=(optimal_frac, min_rms),
-        xytext=(optimal_frac + 0.05, min_rms + (max(rms_values) - min(rms_values)) * 0.15),
+    fig, ax1 = plt.subplots(1, 1, figsize=(9, 5))
+
+    # Plot RMS on left axis
+    color_rms = 'tab:blue'
+    line_rms, = ax1.plot(radii_frac, rms_values, '-o', color=color_rms,
+                         markersize=4, linewidth=1.5, label='RMS')
+    ax1.set_xlabel('Support Radius (fraction of mirror radius)')
+    ax1.set_ylabel('RMS Surface Deformation (nm)', color=color_rms)
+    ax1.tick_params(axis='y', labelcolor=color_rms)
+
+    # Plot PV on right axis
+    ax2 = ax1.twinx()
+    color_pv = 'tab:orange'
+    line_pv, = ax2.plot(radii_frac, pv_values, '-s', color=color_pv,
+                        markersize=4, linewidth=1.5, label='PV')
+    ax2.set_ylabel('Peak-to-Valley Deformation (nm)', color=color_pv)
+    ax2.tick_params(axis='y', labelcolor=color_pv)
+
+    # Mark the optimum on the optimized metric's axis
+    if metric == 'rms':
+        opt_val = results['min_rms']
+        ax1.plot(optimal_frac, opt_val, 'r*', markersize=15, zorder=5)
+        ax1.axvline(optimal_frac, color='r', linestyle='--', alpha=0.7)
+        ann_ax = ax1
+        ann_label = f'{optimal_frac:.4f}R\n{opt_val:.1f} nm RMS'
+        ann_y = opt_val
+        y_range = max(rms_values) - min(rms_values)
+    else:
+        opt_val = results['min_pv']
+        ax2.plot(optimal_frac, opt_val, 'r*', markersize=15, zorder=5)
+        ax2.axvline(optimal_frac, color='r', linestyle='--', alpha=0.7)
+        ann_ax = ax2
+        ann_label = f'{optimal_frac:.4f}R\n{opt_val:.1f} nm PV'
+        ann_y = opt_val
+        y_range = max(pv_values) - min(pv_values)
+
+    ann_ax.annotate(
+        ann_label,
+        xy=(optimal_frac, ann_y),
+        xytext=(optimal_frac + 0.05, ann_y + y_range * 0.15),
         arrowprops=dict(arrowstyle='->', color='red'),
         fontsize=10,
         color='red',
     )
 
-    # Mark the classical 0.6789R reference (PV-optimal)
-    ax.axvline(0.6789, color='green', linestyle=':', alpha=0.5,
-               label='Classical 0.6789R (PV-optimal)')
+    # Mark the classical 0.6789R reference
+    ax1.axvline(0.6789, color='green', linestyle=':', alpha=0.5)
 
-    ax.set_xlabel('Support Radius (fraction of mirror radius)')
-    ax.set_ylabel('RMS Surface Deformation (nm)')
-    ax.set_title('RMS Deformation vs Support Radius')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    # Combined legend
+    lines = [line_rms, line_pv]
+    labels = [l.get_label() for l in lines]
+    labels.append('Classical 0.6789R')
+    lines.append(plt.Line2D([0], [0], color='green', linestyle=':', alpha=0.5))
+    ax1.legend(lines, labels, loc='upper left')
 
-    plt.tight_layout()
+    metric_name = 'RMS' if metric == 'rms' else 'PV'
+    ax1.set_title(f'Surface Deformation vs Support Radius (optimizing {metric_name})')
+    ax1.grid(True, alpha=0.3)
+
+    fig.tight_layout()
     return fig
