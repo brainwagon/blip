@@ -102,6 +102,7 @@ python mirror_cell.py --diameter <mm> --thickness <mm> [options]
 | `--optimize` | Sweep support radius to find the optimum (default if no `--support-radius`) |
 | `--n-points` | Number of sweep points (default: 50) |
 | `--nrefs` | Mesh refinement level (default: 5, use 6 for higher accuracy) |
+| `-o`, `--output` | Save plots to file (format from extension: `.png`, `.pdf`, `.svg`). In optimize mode, two files are saved with `_deformation` and `_metric` suffixes. |
 | `--no-plot` | Suppress plot windows |
 
 ### Examples
@@ -140,6 +141,13 @@ PLOP mode with a specific support radius:
 
 ```bash
 python mirror_cell.py --diameter 150 --thickness 25 --mode plop --support-radius 0.67
+```
+
+Save plots to PNG files instead of displaying:
+
+```bash
+python mirror_cell.py --diameter 150 --thickness 25 -o results.png
+# Produces: results_deformation.png, results_metric.png
 ```
 
 ## Example Results
