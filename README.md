@@ -27,10 +27,40 @@ produce results which are close to classic results (the Grubb optimal support ra
 multiplier is somewhat smaller (0.636 instead of 0.707) but is still nowhere near as low as what appears 
 to be suggested by PLOP.   So what gives?  Is PLOP way off?  Or is the classic model not proper?
 
-It appears to be the latter, I found this discussion to be somewhat helpful. 
-
+It appears to be the latter, Using Grok's web search I found this discussion, which seemed to be somewhat helpful. 
 
 [Discussion on Cloudy Nights] (https://www.cloudynights.com/forums/topic/329521-plop-3-point-cell-question/)
+
+While the discussion was not super technical, I began to see what the issues were.   When we optimize
+just the overall deviation, the area near the edge is split between high and low zones, meaning that there is a
+fairly error (both PV and RMS) in the zone that is most critical to image formation.   This is a reflection 
+of the same issues that require consideration of the a tolerance envelope (the [Millies-LaCroix envelope](https://atmsite.udjat.nl/contrib/Poulson/faq/ml.html) as first described in the February 1976 _Sky and Telescope_).   In
+particular, slope errors in the mirror surface near the edge are more problematic than similar sized errors
+nearer the center.  If the errors were more constant near the edge, it would act as if the telescope's 
+focal length were very slightly changed, but that could be accomodated by simply refocusing.
+
+With this idea in mind, I described the situation to Claude and asked them to add a "plop mode" that caused
+it to take this into consideration.  And I got precisely what I expected: the optimal radius dropped to less 
+than 0.4 times the radius, and the surface deviation was far more radially symmetric, essentially being a 
+surface of revolution near the edge. 
+
+= Conclusions
+
+Well, what does this mean for the amateur telescope maker?
+
+Frankly, not a lot.  The truth is that for a full thickness six inch mirror blank, the deviations hardly matter at
+all.  The error caused by supports at the sqrt(2)/2 radius is about 5x what they are at the PLOP suggested optimum, but they still account to less than 1/40th of a wave.  Supporting at the edge ala Texereau would still be 1/30th of a wave.
+Any of these would be very difficult to discern at the eyepiece.   
+
+But I have a greater understanding of the underlying issues, and I had a lot of fun using Claude to generate
+code to help me understand what's going on with mirror cell designs. 
+
+For the purpose of my mirror cell design, I think it proves that I really allowed myself to get distracted, 
+and that any choice would have been fine.  Indeed, I feel like if there are physical, mechanical, or even aesthetic
+constraints, I now can understand how truly inconsequential they probably will be. 
+
+Hope somebody finds this interesting.
+
 
 # Mirror Cell Support Optimizer
 
