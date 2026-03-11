@@ -56,6 +56,9 @@ def parse_args(argv=None):
                              'plop (wavefront error in waves at 550nm after refocusing)')
     parser.add_argument('--focal-length', type=float, default=None,
                         help='Mirror focal length in mm (used for PLOP mode f-ratio display)')
+    parser.add_argument('-o', '--output', type=str, default=None,
+                        help='Save plots to file instead of displaying. '
+                             'Format is inferred from extension (e.g. .png, .pdf, .svg).')
     parser.add_argument('--no-plot', action='store_true', default=False,
                         help='Suppress plot display')
     parser.add_argument('--n-points', type=int, default=50,
@@ -196,7 +199,10 @@ def main(argv=None):
         print(f"Classical reference (Grubb, PV-optimal): 0.6789R")
         print(f"Deviation from classical PV-optimal:     {deviation:.1f}%")
 
-        if not args.no_plot:
+        if not args.no_plot or args.output:
+            import matplotlib
+            if args.output:
+                matplotlib.use('Agg')
             import matplotlib.pyplot as plt
 
             # Also evaluate at optimum for deformation plot
@@ -206,13 +212,24 @@ def main(argv=None):
             )
             w_nodal = result['w'][result['basis'].nodal_dofs[0]]
 
-            plot_deformation(
+            fig_deform = plot_deformation(
                 result['mesh'], w_nodal, result['support_points'],
                 title=f'Deformation at optimal support ({optimal_frac:.4f}R, {metric_name})',
                 obstruction_radius=obstruction_m,
             )
-            plot_metric_vs_radius(results)
-            plt.show()
+            fig_metric = plot_metric_vs_radius(results)
+
+            if args.output:
+                import os
+                base, ext = os.path.splitext(args.output)
+                deform_path = f"{base}_deformation{ext}"
+                metric_path = f"{base}_metric{ext}"
+                fig_deform.savefig(deform_path, dpi=150, bbox_inches='tight')
+                fig_metric.savefig(metric_path, dpi=150, bbox_inches='tight')
+                print()
+                print(f"Plots saved to: {deform_path}, {metric_path}")
+            if not args.no_plot and not args.output:
+                plt.show()
 
     else:
         # Single evaluation mode
@@ -235,14 +252,23 @@ def main(argv=None):
             print(f"  RMS wavefront error: {result['wf_rms_waves']:.4f} waves")
             print(f"  P-V wavefront error: {result['wf_pv_waves']:.4f} waves")
 
-        if not args.no_plot:
+        if not args.no_plot or args.output:
+            import matplotlib
+            if args.output:
+                matplotlib.use('Agg')
             import matplotlib.pyplot as plt
-            plot_deformation(
+            fig_deform = plot_deformation(
                 result['mesh'], w_nodal, result['support_points'],
                 title=f'Deformation at {support_frac:.4f}R support radius',
                 obstruction_radius=obstruction_m,
             )
-            plt.show()
+
+            if args.output:
+                fig_deform.savefig(args.output, dpi=150, bbox_inches='tight')
+                print()
+                print(f"Plot saved to: {args.output}")
+            if not args.no_plot and not args.output:
+                plt.show()
 
 
 if __name__ == '__main__':
