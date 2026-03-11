@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Mirror Cell Support Optimizer — CLI entry point.
+
+Analyzes and optimizes the placement of three symmetric support points
+for a Newtonian telescope primary mirror using finite element analysis.
+
+Usage:
+    python mirror_cell.py --diameter 150 --thickness 25 --optimize
+    python mirror_cell.py --diameter 150 --thickness 25 --support-radius 0.68
+"""
+
+import argparse
+import sys
+
+import numpy as np
+
+from optimizer import optimize_support_radius, evaluate_single
+from visualize import plot_deformation, plot_rms_vs_radius
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Mirror Cell Support Optimizer — find optimal 3-point support placement',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            'Examples:\n'
+            '  python mirror_cell.py --diameter 150 --thickness 25 --optimize\n'
+            '  python mirror_cell.py --diameter 200 --thickness 30 --support-radius 0.68\n'
+        ),
+    )
+    parser.add_argument('--diameter', type=float, required=True,
+                        help='Mirror diameter in mm')
+    parser.add_argument('--thickness', type=float, required=True,
+                        help='Mirror thickness in mm')
+    parser.add_argument('--secondary', type=float, default=None,
+                        help='Secondary mirror diameter in mm (central obstruction). '
+                             'Deformations inside this radius are excluded from RMS.')
+    parser.add_argument('--support-radius', type=float, default=None,
+                        help='Support radius as fraction of mirror radius (0.0-1.0). '
+                             'If omitted, --optimize is assumed.')
+    parser.add_argument('--optimize', action='store_true', default=False,
+                        help='Sweep support radius to find optimum (default if no --support-radius)')
+    parser.add_argument('--no-plot', action='store_true', default=False,
+                        help='Suppress plot display')
+    parser.add_argument('--n-points', type=int, default=50,
+                        help='Number of sweep points for optimization (default: 50)')
+    parser.add_argument('--nrefs', type=int, default=5,
+                        help='Mesh refinement level (default: 5, use 6 for higher accuracy)')
+    return parser.parse_args(argv)
+
+
+def validate_args(args):
+    if args.diameter <= 0:
+        print("Error: diameter must be positive", file=sys.stderr)
+        sys.exit(1)
+    if args.thickness <= 0:
+        print("Error: thickness must be positive", file=sys.stderr)
+        sys.exit(1)
+    if args.thickness >= args.diameter:
+        print("Error: thickness must be less than diameter", file=sys.stderr)
+        sys.exit(1)
+    if args.secondary is not None:
+        if args.secondary <= 0:
+            print("Error: secondary diameter must be positive", file=sys.stderr)
+            sys.exit(1)
+        if args.secondary >= args.diameter:
+            print("Error: secondary diameter must be less than primary diameter", file=sys.stderr)
+            sys.exit(1)
+    if args.support_radius is not None:
+        if not (0.0 < args.support_radius < 1.0):
+            print("Error: support-radius must be between 0 and 1 (exclusive)", file=sys.stderr)
+            sys.exit(1)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    validate_args(args)
+
+    # Convert mm to meters
+    radius_m = (args.diameter / 2.0) / 1000.0
+    thickness_m = args.thickness / 1000.0
+    obstruction_m = (args.secondary / 2.0) / 1000.0 if args.secondary else 0.0
+
+    # Default to optimize mode if no support radius specified
+    do_optimize = args.optimize or args.support_radius is None
+
+    print(f"Mirror Cell Support Optimizer")
+    print(f"{'='*45}")
+    print(f"Mirror diameter:  {args.diameter:.1f} mm")
+    print(f"Mirror radius:    {args.diameter/2:.1f} mm")
+    print(f"Mirror thickness: {args.thickness:.1f} mm")
+    if args.secondary:
+        print(f"Secondary diam:   {args.secondary:.1f} mm (central obstruction)")
+        print(f"  Obstruction:    {args.secondary/args.diameter*100:.1f}% by diameter")
+    print(f"Material:         Pyrex (borosilicate glass)")
+    print(f"  E  = 63 GPa")
+    print(f"  nu = 0.20")
+    print(f"  rho = 2230 kg/m^3")
+    print()
+
+    if do_optimize:
+        print(f"Sweeping support radius from 0.2R to 0.8R ({args.n_points} points)...")
+        print()
+
+        radii_frac, rms_values, optimal_frac, min_rms = optimize_support_radius(
+            radius_m, thickness_m, nrefs=args.nrefs, n_points=args.n_points,
+            obstruction_radius=obstruction_m,
+        )
+
+        # Print results table
+        print()
+        print(f"{'r/R':>8s}  {'RMS (nm)':>10s}")
+        print(f"{'-'*8}  {'-'*10}")
+        for r, rms in zip(radii_frac, rms_values):
+            marker = ' <-- optimum' if abs(r - optimal_frac) < 1e-10 else ''
+            print(f"{r:8.4f}  {rms:10.2f}{marker}")
+
+        print()
+        print(f"Optimal support radius: {optimal_frac:.4f}R = {optimal_frac * args.diameter/2:.2f} mm")
+        print(f"Minimum RMS deformation: {min_rms:.2f} nm")
+
+        # Compare with classical reference
+        classical_pv = 0.6789
+        deviation = abs(optimal_frac - classical_pv) / classical_pv * 100
+        print()
+        print(f"Classical reference (Grubb, PV-optimal): 0.6789R")
+        print(f"Deviation from classical PV-optimal:     {deviation:.1f}%")
+        print(f"  Note: Classical 0.6789R minimizes peak-to-valley deflection.")
+        print(f"  The RMS-optimal radius is typically slightly smaller (~0.65R).")
+
+        if not args.no_plot:
+            import matplotlib.pyplot as plt
+
+            # Also evaluate at optimum for deformation plot
+            mesh, basis, w, _, support_points = evaluate_single(
+                radius_m, thickness_m, optimal_frac, nrefs=args.nrefs,
+                obstruction_radius=obstruction_m,
+            )
+            w_nodal = w[basis.nodal_dofs[0]]
+
+            plot_deformation(
+                mesh, w_nodal, support_points,
+                title=f'Deformation at optimal support ({optimal_frac:.4f}R)',
+                obstruction_radius=obstruction_m,
+            )
+            plot_rms_vs_radius(radii_frac, rms_values, optimal_frac, min_rms)
+            plt.show()
+
+    else:
+        # Single evaluation mode
+        support_frac = args.support_radius
+        print(f"Evaluating support radius: {support_frac:.4f}R = {support_frac * args.diameter/2:.2f} mm")
+        print()
+
+        mesh, basis, w, rms_nm, support_points = evaluate_single(
+            radius_m, thickness_m, support_frac, nrefs=args.nrefs,
+            obstruction_radius=obstruction_m,
+        )
+
+        w_nodal = w[basis.nodal_dofs[0]]
+        print(f"RMS surface deformation: {rms_nm:.2f} nm")
+        print(f"Peak-to-valley: {(np.max(w_nodal) - np.min(w_nodal)) * 1e9:.2f} nm")
+
+        if not args.no_plot:
+            import matplotlib.pyplot as plt
+            plot_deformation(
+                mesh, w_nodal, support_points,
+                title=f'Deformation at {support_frac:.4f}R support radius',
+                obstruction_radius=obstruction_m,
+            )
+            plt.show()
+
+
+if __name__ == '__main__':
+    main()
