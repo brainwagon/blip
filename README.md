@@ -303,6 +303,42 @@ This matches the behavior seen in the [PLOP](https://github.com/davidlewistoront
 
 ---
 
+### 6. Understanding Why PLOP Shifts the Optimal Radius — Trefoil vs Defocus
+
+Many people seem to have a difficult time understanding or accepting the "optimality" of the PLOP result. How can it be better to support a mirror so far from the edge that it visibly sags into a bowl? Doesn't that make the surface *worse*?
+
+In practice, for mirrors in the size range typically used by amateurs, the answer is: it doesn't really matter. As shown in the results above, the surface errors are a tiny fraction of a wave regardless of where you put the supports. The difference between the "optimal" PLOP placement and the classical Grubb radius is the difference between 1/500th of a wave and 1/150th of a wave — both are so far into diffraction-limited territory that no observer could ever tell the difference at the eyepiece. So this is mostly of theoretical rather than practical interest.
+
+That said, the *theoretical* question is interesting: why does refocusing shift the optimum inward so dramatically?
+
+The experiment script `experiment_trefoil.py` tries to make this visible by decomposing the mirror's deformation into two components:
+
+- **Defocus** (r²) — a radially symmetric bowl shape. This is what refocusing removes.
+- **Trefoil** (r³cos3θ, r³sin3θ) — a 3-lobed pattern from the 3-point support geometry. This *cannot* be removed by refocusing.
+
+```bash
+python experiment_trefoil.py --diameter 200 --thickness 25
+python experiment_trefoil.py --diameter 200 --thickness 25 -o images/trefoil_experiment.png
+```
+
+![Trefoil vs Defocus experiment](images/trefoil_experiment.png)
+
+The four panels tell the story:
+
+1. **Top — Standard vs Refocused RMS.** The blue curve (standard mode, no refocusing) has its optimum near 0.64R — close to the Grubb radius. The red curve (with refocusing) has its optimum much further in, at ~0.43R. Refocusing dramatically reduces the error at small radii but barely helps at large radii.
+
+2. **Second — Defocus fraction.** This shows what fraction of the total variance comes from defocus (and is therefore removable by refocusing). At small radii it's over 97% — almost all the error is a simple bowl that refocusing eliminates. At large radii it drops below 10% — the error is mostly trefoil, which refocusing can't touch.
+
+3. **Third — Component amplitudes.** The defocus component (blue) decreases monotonically with support radius while the trefoil component (red) increases monotonically. They cross near 0.63R. To the left of the crossover, defocus dominates; to the right, trefoil dominates.
+
+4. **Bottom — Deformation maps.** At 0.35R the mirror is a smooth bowl (almost pure defocus). At 0.55R it's a mix. At 0.75R the three-lobed trefoil pattern is clearly visible.
+
+The intuition is straightforward: when you support a mirror near its center, it sags into a bowl — a big error, but one that refocusing removes entirely. When you support it near the edge, the three support points create a trefoil pattern that no amount of refocusing can fix. Standard mode has to balance both errors, landing near 0.65R. PLOP mode gets defocus for free, so it moves the supports inward where trefoil is small, accepting a large (but removable) bowl shape in exchange for minimal trefoil.
+
+See [`experiment.md`](experiment.md) for the full experiment design, hypothesis, and Zernike basis definitions.
+
+---
+
 ### Summary comparison
 
 | Configuration | Metric | Optimal r/R | RMS (nm) | PV (nm) | Strehl |
@@ -327,12 +363,14 @@ Key observations:
 ## File Structure
 
 ```
-mirror_cell.py    — CLI entry point, argument parsing, output formatting
-plate_fem.py      — FEA engine: mesh, stiffness/load assembly, support constraints, solve
-rms_calc.py       — Surface error metrics (RMS, PV) with piston/tilt removal and obstruction masking
-optimizer.py      — Support radius sweep (reuses single K/f assembly)
-visualize.py      — Matplotlib: deformation map, dual-axis metric-vs-radius curve with Strehl subplot
-requirements.txt  — Python dependencies
+mirror_cell.py           — CLI entry point, argument parsing, output formatting
+plate_fem.py             — FEA engine: mesh, stiffness/load assembly, support constraints, solve
+rms_calc.py              — Surface error metrics (RMS, PV) with piston/tilt removal and obstruction masking
+optimizer.py             — Support radius sweep (reuses single K/f assembly)
+visualize.py             — Matplotlib: deformation map, dual-axis metric-vs-radius curve with Strehl subplot
+experiment_trefoil.py    — Experiment: trefoil vs defocus decomposition across support radii
+experiment.md            — Experiment design document and expected results
+requirements.txt         — Python dependencies
 ```
 
 ## Material Properties
